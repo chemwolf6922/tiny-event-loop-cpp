@@ -19,13 +19,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_compile_options(-Wall -Wextra -Werror -pedantic)
 
 # Create shared library with major version as SO name
-add_library(tev-cpp SHARED tev.cpp)
+add_library(tev-cpp SHARED Tev.cpp)
 
 set_target_properties(tev-cpp PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION ${PROJECT_VERSION_MAJOR}
     OUTPUT_NAME "tev-cpp"
-    PUBLIC_HEADER "tev-cpp.h"
+    PUBLIC_HEADER "Tev.h"
 )
 
 # Install rules
@@ -33,7 +33,7 @@ install(TARGETS tev-cpp
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
     RUNTIME DESTINATION bin
-    PUBLIC_HEADER DESTINATION include
+    PUBLIC_HEADER DESTINATION include/tev-cpp
 )
 
 # The test executable

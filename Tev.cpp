@@ -1,4 +1,4 @@
-#include "tev-cpp.h"
+#include "Tev.h"
 #include <queue>
 #include <map>
 #include <unordered_map>
@@ -6,9 +6,6 @@
 #include <time.h>
 #include <sys/epoll.h>
 #include <unistd.h>
-
-#include <iostream>
-#include <errno.h>
 
 /** This must be 1 to allow safely removal of fd handlers inside a fd handler */
 #define TEV_MAX_EPOLL_EVENTS 1

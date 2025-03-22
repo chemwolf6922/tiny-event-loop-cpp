@@ -2,7 +2,7 @@
 #define _GNU_SOURCE
 #endif
 
-#include "tev-cpp.h"
+#include "Tev.h"
 #include <iostream>
 #include <unistd.h>
 #include <fcntl.h>
