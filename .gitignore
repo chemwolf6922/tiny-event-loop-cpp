@@ -1,6 +1,2 @@
 /.vscode
-/*.a
-/*.so*
-/test
-/*.o
-/*.d
+/build

@@ -27,4 +27,3 @@ private:
     class Impl;
     Impl *_impl;
 };
-

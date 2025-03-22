@@ -7,6 +7,9 @@
 #include <sys/epoll.h>
 #include <unistd.h>
 
+#include <iostream>
+#include <errno.h>
+
 /** This must be 1 to allow safely removal of fd handlers inside a fd handler */
 #define TEV_MAX_EPOLL_EVENTS 1
 
@@ -14,27 +17,25 @@ class Tev::Impl
 {
 public:
     typedef std::int64_t Timestamp;
-    class FdHandler{
-    public:
+    struct FdHandler
+    {
         std::function<void()> readHandler;
         std::function<void()> writeHandler;
     };
-    class Timeout{
-    public:
+    struct Timeout
+    {
         std::function<void()> callback;
     };
 
-    int epollFd;
-    std::unordered_map<int, Tev::Impl::FdHandler> fdHandlers;
-    std::map<std::pair<Timestamp,TimeoutHandle>, Tev::Impl::Timeout> timers;
-    std::unordered_map<TimeoutHandle,TimeoutHandle> timerIndex;
-    bool fdHandlerFreedInReadHandler;
-    TimeoutHandle timeoutHandleSeed;
+    int epollFd = -1;
+    std::unordered_map<int, FdHandler> fdHandlers{};
+    std::map<std::pair<Timestamp,TimeoutHandle>, Timeout> timers{};
+    std::unordered_map<TimeoutHandle,Timestamp> timerIndex{};
+    bool fdHandlerFreedInReadHandler = false;
+    TimeoutHandle timeoutHandleSeed = 0;
 
-    Impl():
-        epollFd(epoll_create1(0)),
-        fdHandlerFreedInReadHandler(false),
-        timeoutHandleSeed(0)
+    Impl()
+        : epollFd(epoll_create1(0))
     {
     }
 
@@ -52,7 +53,6 @@ public:
     TimeoutHandle GetNextTimeoutHandle();
     void SetReadWriteHandler(int fd, std::function<void()> handler, bool isRead);
 };
-
 
 Tev::Impl::Timestamp Tev::Impl::GetNowMs()
 {
@@ -73,7 +73,6 @@ Tev::TimeoutHandle Tev::Impl::GetNextTimeoutHandle()
 Tev::Tev():
     _impl(new Tev::Impl)
 {
-    
 }
 
 Tev::~Tev()
@@ -105,7 +104,16 @@ void Tev::MainLoop()
                 auto callback = item->second.callback;
                 this->_impl->timers.erase(item);
                 if(callback)
-                    callback();
+                {
+                    try
+                    {
+                        callback();
+                    }
+                    catch(...)
+                    {
+                        /** Ignore all error in the callback */
+                    }
+                }
             }
         }
         /** Are there files to wait for */
@@ -124,9 +132,28 @@ void Tev::MainLoop()
                 continue;
             this->_impl->fdHandlerFreedInReadHandler = false;
             if(((events[i].events & EPOLLIN) || (events[i].events & EPOLLHUP)) && handler->readHandler)
-                handler->readHandler();
+            {
+                try
+                {
+                    handler->readHandler();
+                }
+                catch(...)
+                {
+                    /** Ignore all error in the callback */
+                }
+                
+            }
             if((events[i].events & EPOLLOUT) && (!this->_impl->fdHandlerFreedInReadHandler) && handler->writeHandler)
-                handler->writeHandler();
+            {
+                try
+                {
+                    handler->writeHandler();
+                }
+                catch(...)
+                {
+                    /** Ignore all error in the callback */
+                }
+            }
         }
     }
 }
@@ -224,5 +251,3 @@ void Tev::Impl::SetReadWriteHandler(int fd, std::function<void()> handler, bool 
         }
     }
 }
-
-

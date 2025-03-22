@@ -4,19 +4,25 @@
 
 #include "tev-cpp.h"
 #include <iostream>
-#include <cassert>
 #include <unistd.h>
 #include <fcntl.h>
 
-
 int main(int argc, char const *argv[])
 {
-    Tev tev;
-    Tev::TimeoutHandle timer;
-    int fds[2] = {-1,-1};
-    assert(pipe2(fds, O_NONBLOCK) == 0);
+    (void)argc;
+    (void)argv;
 
-    tev.SetReadHandler(fds[0], [&tev, &fds](){
+    Tev tev{};
+    Tev::TimeoutHandle timer = 0;
+    int fds[2] = {-1,-1};
+    int rc = pipe2(fds, O_NONBLOCK);
+    if (rc != 0)
+    {
+        std::cerr << "pipe2 failed" << std::endl;
+        return 1;
+    }
+
+    tev.SetReadHandler(fds[0], [&](){
         char buf[1024];
         ssize_t n = read(fds[0], buf, sizeof(buf));
         if(n > 0){
@@ -25,17 +31,17 @@ int main(int argc, char const *argv[])
         }
     });
 
-    tev.SetTimeout([&tev, &fds](){
+    tev.SetTimeout([&](){
         char buf[] = "Hello";
         ssize_t n = write(fds[1], buf, sizeof(buf));
         (void)n;
     }, 500);
 
-    tev.SetTimeout([&tev, &fds](){
+    tev.SetTimeout([&](){
         tev.SetReadHandler(fds[0],nullptr);
     },3000);
 
-    std::function<void()> repeat = [&repeat, &tev, &timer](){
+    std::function<void()> repeat = [&](){
         timer = tev.SetTimeout([&repeat](){
             std::cout << "Hello" << std::endl;
             repeat();
@@ -43,7 +49,7 @@ int main(int argc, char const *argv[])
     };
     repeat();
     
-    tev.SetTimeout([&tev, &timer](){
+    tev.SetTimeout([&](){
         tev.ClearTimeout(timer);
     },5000);
 
