@@ -214,7 +214,10 @@ void Tev::Impl::SetReadWriteHandler(int fd, std::function<void()> handler, bool 
     /** Change epoll settings */
     if((!fdHandler.readHandler) && (!fdHandler.writeHandler))
     {
-        epoll_ctl(epollFd, EPOLL_CTL_DEL, fd, nullptr);
+        if (hadReadHandler || hadWriteHandler)
+        {
+            epoll_ctl(epollFd, EPOLL_CTL_DEL, fd, nullptr);
+        }
         fdHandlers.erase(fd);
         fdHandlerFreedInReadHandler = true;
     }
@@ -235,7 +238,7 @@ void Tev::Impl::SetReadWriteHandler(int fd, std::function<void()> handler, bool 
     else if((hadReadHandler != !!fdHandler.readHandler) 
         || (hadWriteHandler != !!fdHandler.writeHandler))
     {
-        struct epoll_event ev;
+        struct epoll_event ev{};
         if(fdHandler.readHandler)
             ev.events |= EPOLLIN;
         if(fdHandler.writeHandler)
