@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 
-project(tev-cpp VERSION 1.0 LANGUAGES CXX)
+project(tev-cpp VERSION 1.1 LANGUAGES CXX)
 
 # Set default build type to Release if not specified
 if(NOT CMAKE_BUILD_TYPE)
