@@ -140,7 +140,7 @@ void Tev::MainLoop()
                 }
                 
             }
-            if((events[i].events & EPOLLOUT) && (!this->_impl->fdHandlerFreedInReadHandler) && handler->writeHandler)
+            if(((events[i].events & EPOLLOUT) || (events[i].events & EPOLLHUP)) && (!this->_impl->fdHandlerFreedInReadHandler) && handler->writeHandler)
             {
                 try
                 {
