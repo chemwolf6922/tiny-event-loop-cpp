@@ -171,7 +171,7 @@ Tev::FdHandler Tev::SetReadHandler(int fd, std::function<void()> callback)
     return FdHandler{
         [this, fd]() {
             SetReadWriteHandler(fd, nullptr, true, false);
-        }
+        }, fd, true
     };
 }
 
@@ -181,7 +181,7 @@ Tev::FdHandler Tev::SetWriteHandler(int fd, std::function<void()> callback)
     return FdHandler{
         [this, fd]() {
             SetReadWriteHandler(fd, nullptr, false, false);
-        }
+        }, fd, false
     };
 }
 
@@ -264,6 +264,11 @@ void Tev::RunInNextCycle(std::function<void()> callback)
 
 /** Timeout */
 
+Tev::Timeout::Timeout()
+    : _clearFunc{nullptr}, _cleared(true)
+{
+}
+
 Tev::Timeout::Timeout(std::function<void()> clearFunc)
     : _clearFunc(std::move(clearFunc))
 {
@@ -305,6 +310,77 @@ bool Tev::Timeout::operator==(std::nullptr_t) const
 }
 
 void Tev::Timeout::Clear()
+{
+    if (_cleared)
+    {
+        return;
+    }
+    _cleared = true;
+    if (_clearFunc)
+    {
+        _clearFunc();
+    }
+}
+
+/** Fd handler */
+
+Tev::FdHandler::FdHandler()
+    : _clearFunc{nullptr}, _fd(-1), _isRead(false), _cleared(true)
+{
+}
+
+Tev::FdHandler::FdHandler(std::function<void()> clearFunc, int fd, bool isRead)
+    : _clearFunc(std::move(clearFunc)), _fd(fd), _isRead(isRead)
+{
+}
+
+Tev::FdHandler::~FdHandler()
+{
+    try
+    {
+        Clear();
+    }
+    catch(...)
+    {
+        /** Ignore errors in destructor */
+    }
+}
+
+Tev::FdHandler::FdHandler(Tev::FdHandler&& other) noexcept
+    : _clearFunc(std::move(other._clearFunc)), _fd(other._fd), _isRead(other._isRead), _cleared(other._cleared)
+{
+    other._fd = -1;
+    other._cleared = true;
+}
+
+Tev::FdHandler& Tev::FdHandler::operator=(Tev::FdHandler&& other)
+{
+    if (this != &other)
+    {
+        if (_fd != other._fd || _isRead != other._isRead)
+        {
+            /** 
+             * If the fd and type matches. DO NOT call clear. 
+             * This is just a callback update.
+             */
+            Clear();
+        }
+        _clearFunc = std::move(other._clearFunc);
+        _fd = other._fd;
+        _isRead = other._isRead;
+        _cleared = other._cleared;
+        other._fd = -1;
+        other._cleared = true;
+    }
+    return *this;
+}
+
+bool Tev::FdHandler::operator==(std::nullptr_t) const
+{
+    return _cleared;
+}
+
+void Tev::FdHandler::Clear()
 {
     if (_cleared)
     {

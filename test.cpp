@@ -24,6 +24,10 @@ int main(int argc, char const *argv[])
     }
 
     auto readHandler = tev.SetReadHandler(fds[0], [&](){
+    });
+
+    /** Assign the read handler again. This should not cause any trouble. */
+    readHandler = tev.SetReadHandler(fds[0], [&](){
         char buf[1024];
         ssize_t n = read(fds[0], buf, sizeof(buf));
         if(n > 0){
