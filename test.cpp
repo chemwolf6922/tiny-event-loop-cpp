@@ -4,6 +4,7 @@
 
 #include "Tev.h"
 #include <iostream>
+#include <optional>
 #include <unistd.h>
 #include <fcntl.h>
 
@@ -13,7 +14,7 @@ int main(int argc, char const *argv[])
     (void)argv;
 
     Tev tev{};
-    Tev::TimeoutHandle timer = 0;
+    std::optional<Tev::Timeout> timer{std::nullopt};
     int fds[2] = {-1,-1};
     int rc = pipe2(fds, O_NONBLOCK);
     if (rc != 0)
@@ -22,7 +23,7 @@ int main(int argc, char const *argv[])
         return 1;
     }
 
-    tev.SetReadHandler(fds[0], [&](){
+    auto readHandler = tev.SetReadHandler(fds[0], [&](){
         char buf[1024];
         ssize_t n = read(fds[0], buf, sizeof(buf));
         if(n > 0){
@@ -31,14 +32,14 @@ int main(int argc, char const *argv[])
         }
     });
 
-    tev.SetTimeout([&](){
+    auto sendTimeout = tev.SetTimeout([&](){
         char buf[] = "Hello";
         ssize_t n = write(fds[1], buf, sizeof(buf));
         (void)n;
     }, 500);
 
-    tev.SetTimeout([&](){
-        tev.SetReadHandler(fds[0],nullptr);
+    auto clearReadHandlerTimeout = tev.SetTimeout([&](){
+        readHandler.Clear();
     },3000);
 
     std::function<void()> repeat = [&](){
@@ -49,8 +50,8 @@ int main(int argc, char const *argv[])
     };
     repeat();
     
-    tev.SetTimeout([&](){
-        tev.ClearTimeout(timer);
+    auto clearTimerTimeout = tev.SetTimeout([&](){
+        timer->Clear();
     },5000);
 
     tev.MainLoop();
