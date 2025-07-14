@@ -23,6 +23,23 @@ void Tev::MainLoop()
     int next_timeout;
     for(;;)
     {
+        /** Process run in next cycle callbacks. */
+        while (!_nextCycleCallbacks.empty())
+        {
+            auto callback = std::move(_nextCycleCallbacks.front());
+            _nextCycleCallbacks.pop();
+            if(callback)
+            {
+                try
+                {
+                    callback();
+                }
+                catch(...)
+                {
+                    /** Ignore all error in the callback */
+                }
+            }
+        }
         next_timeout = 0;
         /** Process due timers */
         /** Do this instead of additional syscall */
@@ -39,7 +56,7 @@ void Tev::MainLoop()
                 }
                 /** remove the item first */
                 _timerIndex.erase(item->first.second);
-                auto callback = item->second.callback;
+                auto callback = std::move(item->second);
                 _timers.erase(item);
                 if(callback)
                 {
@@ -124,7 +141,7 @@ Tev::Timeout Tev::SetTimeout(std::function<void()> callback, std::int64_t timeou
     {
         throw std::runtime_error("Failed to insert the timeout handle");
     }
-    auto pair2 = _timers.insert(std::make_pair(std::make_pair(target, handle), Tev::TimeoutImpl{callback}));
+    auto pair2 = _timers.insert(std::make_pair(std::make_pair(target, handle), std::move(callback)));
     if(!pair2.second)
     {
         _timerIndex.erase(pair.first);
@@ -236,6 +253,14 @@ void Tev::SetReadWriteHandler(int fd, std::function<void()> handler, bool isRead
     }
 }
 
+void Tev::RunInNextCycle(std::function<void()> callback)
+{
+    if(!callback)
+    {
+        throw std::invalid_argument("No callback provided for RunInNextCycle");
+    }
+    _nextCycleCallbacks.push(std::move(callback));
+}
 
 /** Timeout */
 

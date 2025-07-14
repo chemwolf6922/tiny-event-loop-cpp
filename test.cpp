@@ -51,7 +51,11 @@ int main(int argc, char const *argv[])
     repeat();
     
     auto clearTimerTimeout = tev.SetTimeout([&](){
-        timer->Clear();
+        tev.RunInNextCycle([&](){
+            tev.RunInNextCycle([&](){
+                timer->Clear();
+            });
+        });
     },5000);
 
     tev.MainLoop();

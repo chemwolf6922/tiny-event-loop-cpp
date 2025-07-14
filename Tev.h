@@ -5,6 +5,7 @@
 #include <memory>
 #include <unordered_map>
 #include <map>
+#include <queue>
 
 class Tev
 {
@@ -69,20 +70,17 @@ private:
         std::function<void()> readHandler{nullptr};
         std::function<void()> writeHandler{nullptr};
     };
-    struct TimeoutImpl
-    {
-        std::function<void()> callback{nullptr};
-    };
 
     /** This must be 1 to allow safely removal of fd handlers inside a fd handler */
     static constexpr int TEV_MAX_EPOLL_EVENTS = 1;
 
     UniqueFd _epollFd;
     std::unordered_map<int, FdHandlerImpl> _fdHandlers{};
-    std::map<std::pair<Timestamp, TimeoutHandle>, TimeoutImpl> _timers{};
-    std::unordered_map<TimeoutHandle, Timestamp> _timerIndex{};
     bool _fdHandlerFreedInReadHandler{false};
+    std::map<std::pair<Timestamp, TimeoutHandle>, std::function<void()>> _timers{};
+    std::unordered_map<TimeoutHandle, Timestamp> _timerIndex{};
     TimeoutHandle _timeoutHandleSeed{0};
+    std::queue<std::function<void()>> _nextCycleCallbacks{};
 
     Timestamp GetTimestamp();
     void ClearTimeout(TimeoutHandle handle);
