@@ -23,52 +23,62 @@ void Tev::MainLoop()
     int next_timeout;
     for(;;)
     {
-        /** Process run in next cycle callbacks. */
-        while (!_nextCycleCallbacks.empty())
-        {
-            auto callback = std::move(_nextCycleCallbacks.front());
-            _nextCycleCallbacks.pop();
-            if(callback)
-            {
-                try
-                {
-                    callback();
-                }
-                catch(...)
-                {
-                    /** Ignore all error in the callback */
-                }
-            }
-        }
         next_timeout = 0;
-        /** Process due timers */
+        /** Process due timers and run next callbacks */
         /** Do this instead of additional syscall */
-        if(_timers.size() > 0)
+        if (!_timers.empty() || !_nextCycleCallbacks.empty())
         {
             auto now = GetTimestamp();
-            while(_timers.size() > 0)
+            while(!_timers.empty() || !_nextCycleCallbacks.empty())
             {
-                auto item = _timers.begin();
-                if(item->first.first > now)
+                while (!_nextCycleCallbacks.empty())
                 {
-                    next_timeout = item->first.first - now;
-                    break;
-                }
-                /** remove the item first */
-                _timerIndex.erase(item->first.second);
-                auto callback = std::move(item->second);
-                _timers.erase(item);
-                if(callback)
-                {
-                    try
+                    auto callback = std::move(_nextCycleCallbacks.front());
+                    _nextCycleCallbacks.pop();
+                    if(callback)
                     {
-                        callback();
-                    }
-                    catch(...)
-                    {
-                        /** Ignore all error in the callback */
+                        try
+                        {
+                            callback();
+                        }
+                        catch(...)
+                        {
+                            /** Ignore all error in the callback */
+                        }
                     }
                 }
+                /** 
+                 * At this point. Run in next cycle might have created new timers.
+                 * But there are no more run in next cycle callbacks.
+                 */
+                if (!_timers.empty())
+                {
+                    auto item = _timers.begin();
+                    if(item->first.first > now)
+                    {
+                        next_timeout = item->first.first - now;
+                        break;
+                    }
+                    /** remove the item first */
+                    _timerIndex.erase(item->first.second);
+                    auto callback = std::move(item->second);
+                    _timers.erase(item);
+                    if(callback)
+                    {
+                        try
+                        {
+                            callback();
+                        }
+                        catch(...)
+                        {
+                            /** Ignore all error in the callback */
+                        }
+                    }
+                }
+                /**
+                 * At this point. There might still be timers to execute.
+                 * And there also might be new run in next cycle callbacks created in the executed timer.
+                 */
             }
         }
         /** Are there files to wait for */
