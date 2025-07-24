@@ -44,6 +44,10 @@ int main(int argc, char const *argv[])
 
     auto clearReadHandlerTimeout = tev.SetTimeout([&](){
         readHandler.Clear();
+        if (readHandler != nullptr)
+        {
+            abort();
+        }
     },3000);
 
     std::function<void()> repeat = [&](){
@@ -58,6 +62,10 @@ int main(int argc, char const *argv[])
         tev.RunInNextCycle([&](){
             tev.RunInNextCycle([&](){
                 timer->Clear();
+                if (timer != nullptr)
+                {
+                    abort();
+                }
             });
         });
     },5000);

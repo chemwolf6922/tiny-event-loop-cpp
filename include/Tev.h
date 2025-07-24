@@ -19,7 +19,7 @@ public:
         friend class Tev;
 
         Timeout()
-            : _clearFunc{nullptr}, _cleared(true)
+            : _clearFunc{nullptr}, _isValidFunc{nullptr}
         {
         }
 
@@ -39,9 +39,8 @@ public:
         Timeout& operator=(const Timeout&) = delete;
 
         Timeout(Timeout&& other) noexcept
-            : _clearFunc(std::move(other._clearFunc)), _cleared(other._cleared)
+            : _clearFunc(std::move(other._clearFunc)), _isValidFunc(std::move(other._isValidFunc))
         {
-            other._cleared = true;
         }
 
         Timeout& operator=(Timeout&& other)
@@ -50,8 +49,7 @@ public:
             {
                 Clear();
                 _clearFunc = std::move(other._clearFunc);
-                _cleared = other._cleared;
-                other._cleared = true;
+                _isValidFunc = std::move(other._isValidFunc);
             }
             return *this;
         }
@@ -59,17 +57,16 @@ public:
         /** Triggering the timeout will not set this to true. */
         bool operator==(std::nullptr_t) const
         {
-            return _cleared;
+            if (!_isValidFunc)
+            {
+                return true;
+            }
+            return !_isValidFunc();
         }
 
         /** Clear an already cleared/triggered timeout is fine. */
         void Clear()
         {
-            if (_cleared)
-            {
-                return;
-            }
-            _cleared = true;
             if (_clearFunc)
             {
                 _clearFunc();
@@ -78,10 +75,10 @@ public:
 
     private:
         std::function<void()> _clearFunc;
-        bool _cleared{false};
+        std::function<bool()> _isValidFunc;
 
-        explicit Timeout(std::function<void()> clearFunc)
-            : _clearFunc(std::move(clearFunc))
+        explicit Timeout(std::function<void()> clearFunc, std::function<bool()> isValidFunc)
+            : _clearFunc(std::move(clearFunc)), _isValidFunc(std::move(isValidFunc))
         {
         }
     };
@@ -91,7 +88,7 @@ public:
     public:
         friend class Tev;
         FdHandler()
-            : _clearFunc{nullptr}, _fd(-1), _isRead(false), _cleared(true)
+            : _clearFunc{nullptr}, _fd(-1), _isRead(false)
         {
         }
 
@@ -111,10 +108,9 @@ public:
         FdHandler& operator=(const FdHandler&) = delete;
 
         FdHandler(FdHandler&& other) noexcept
-            : _clearFunc(std::move(other._clearFunc)), _fd(other._fd), _isRead(other._isRead), _cleared(other._cleared)
+            : _clearFunc(std::move(other._clearFunc)), _isValidFunc(std::move(other._isValidFunc)), _fd(other._fd), _isRead(other._isRead)
         {
             other._fd = -1;
-            other._cleared = true;
         }
 
         FdHandler& operator=(FdHandler&& other)
@@ -130,28 +126,26 @@ public:
                     Clear();
                 }
                 _clearFunc = std::move(other._clearFunc);
+                _isValidFunc = std::move(other._isValidFunc);
                 _fd = other._fd;
                 _isRead = other._isRead;
-                _cleared = other._cleared;
                 other._fd = -1;
-                other._cleared = true;
             }
             return *this;
         }
 
         bool operator==(std::nullptr_t) const
         {
-            return _cleared;
+            if (!_isValidFunc)
+            {
+                return true;
+            }
+            return !_isValidFunc();
         }
 
         /** Clear an already cleared fd handler is fine */
         void Clear()
         {
-            if (_cleared)
-            {
-                return;
-            }
-            _cleared = true;
             if (_clearFunc)
             {
                 _clearFunc();
@@ -160,15 +154,14 @@ public:
 
     private:
         std::function<void()> _clearFunc;
+        std::function<bool()> _isValidFunc;
         int _fd{-1};
         bool _isRead{false};
-        bool _cleared{false};
 
-        FdHandler(std::function<void()> clearFunc, int fd, bool isRead)
-            : _clearFunc(std::move(clearFunc)), _fd(fd), _isRead(isRead)
+        FdHandler(std::function<void()> clearFunc, std::function<bool()> isValidFunc, int fd, bool isRead)
+            : _clearFunc(std::move(clearFunc)), _isValidFunc(std::move(isValidFunc)), _fd(fd), _isRead(isRead)
         {
         }
-
     };
 
     Tev()
@@ -322,6 +315,9 @@ public:
         return Timeout{
             [this, handle]() {
                 ClearTimeout(handle);
+            },
+            [this, handle]() -> bool {
+                return _timerIndex.contains(handle);
             }
         };
     }
@@ -337,6 +333,14 @@ public:
         return FdHandler{
             [this, fd]() {
                 SetReadWriteHandler(fd, nullptr, true, false);
+            },
+            [this, fd]() -> bool {
+                auto item = _fdHandlers.find(fd);
+                if (item == _fdHandlers.end())
+                {
+                    return false;
+                }
+                return item->second.readHandler != nullptr;
             }, fd, true
         };
     }
@@ -347,6 +351,14 @@ public:
         return FdHandler{
             [this, fd]() {
                 SetReadWriteHandler(fd, nullptr, false, false);
+            },
+            [this, fd]() -> bool {
+                auto item = _fdHandlers.find(fd);
+                if (item == _fdHandlers.end())
+                {
+                    return false;
+                }
+                return item->second.writeHandler != nullptr;
             }, fd, false
         };
     }
