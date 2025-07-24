@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 
-project(tev-cpp VERSION 2.0 LANGUAGES CXX)
+project(tev-cpp LANGUAGES CXX)
 
 # Set default build type to Release if not specified
 if(NOT CMAKE_BUILD_TYPE)
@@ -18,22 +18,28 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Strict warnings and errors
 add_compile_options(-Wall -Wextra -Werror -pedantic)
 
-# Create shared library with major version as SO name
-add_library(tev-cpp SHARED Tev.cpp)
+# Header only library
+add_library(${PROJECT_NAME} INTERFACE)
 
-set_target_properties(tev-cpp PROPERTIES
-    VERSION ${PROJECT_VERSION}
-    SOVERSION ${PROJECT_VERSION_MAJOR}
-    OUTPUT_NAME "tev-cpp"
-    PUBLIC_HEADER "Tev.h"
+target_include_directories(${PROJECT_NAME}
+    INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
 )
 
-# Install rules
-install(TARGETS tev-cpp
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
-    RUNTIME DESTINATION bin
-    PUBLIC_HEADER DESTINATION include/tev-cpp
+install(
+    DIRECTORY include/
+    DESTINATION include/${PROJECT_NAME}
+)
+
+install(
+    TARGETS ${PROJECT_NAME}
+    EXPORT ${PROJECT_NAME}Targets
+)
+
+install(
+    EXPORT ${PROJECT_NAME}Targets
+    DESTINATION lib/cmake/${PROJECT_NAME}
 )
 
 # The test executable
