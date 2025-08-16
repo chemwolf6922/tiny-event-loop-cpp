@@ -69,7 +69,9 @@ public:
         {
             if (_clearFunc)
             {
-                _clearFunc();
+                auto clearFunc = std::move(_clearFunc);
+                _clearFunc = nullptr;
+                clearFunc();
             }
         }
 
@@ -148,7 +150,9 @@ public:
         {
             if (_clearFunc)
             {
-                _clearFunc();
+                auto clearFunc = std::move(_clearFunc);
+                _clearFunc = nullptr;
+                clearFunc();
             }
         }
 
