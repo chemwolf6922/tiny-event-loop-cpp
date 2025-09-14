@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <map>
 #include <queue>
 #include <chrono>
@@ -90,7 +91,6 @@ public:
     public:
         friend class Tev;
         FdHandler()
-            : _clearFunc{nullptr}, _fd(-1), _isRead(false)
         {
         }
 
@@ -110,28 +110,21 @@ public:
         FdHandler& operator=(const FdHandler&) = delete;
 
         FdHandler(FdHandler&& other) noexcept
-            : _clearFunc(std::move(other._clearFunc)), _isValidFunc(std::move(other._isValidFunc)), _fd(other._fd), _isRead(other._isRead)
+            : _clearFunc(std::move(other._clearFunc)), _isValidFunc(std::move(other._isValidFunc)), _id(other._id), _isRead(other._isRead)
         {
-            other._fd = -1;
+            other._id = 0;
         }
 
         FdHandler& operator=(FdHandler&& other)
         {
             if (this != &other)
             {
-                if (_fd != other._fd || _isRead != other._isRead)
-                {
-                    /** 
-                     * If the fd and type matches. DO NOT call clear. 
-                     * This is just a callback update.
-                     */
-                    Clear();
-                }
+                Clear();
                 _clearFunc = std::move(other._clearFunc);
                 _isValidFunc = std::move(other._isValidFunc);
-                _fd = other._fd;
+                _id = other._id;
                 _isRead = other._isRead;
-                other._fd = -1;
+                other._id = 0;
             }
             return *this;
         }
@@ -142,7 +135,7 @@ public:
             {
                 return true;
             }
-            return !_isValidFunc();
+            return !_isValidFunc(_id);
         }
 
         /** Clear an already cleared fd handler is fine */
@@ -152,18 +145,25 @@ public:
             {
                 auto clearFunc = std::move(_clearFunc);
                 _clearFunc = nullptr;
-                clearFunc();
+                clearFunc(_id);
             }
         }
 
     private:
-        std::function<void()> _clearFunc;
-        std::function<bool()> _isValidFunc;
-        int _fd{-1};
+        std::function<void(uint64_t id)> _clearFunc{nullptr};
+        std::function<bool(uint64_t id)> _isValidFunc{nullptr};
+        uint64_t _id{0};
         bool _isRead{false};
 
-        FdHandler(std::function<void()> clearFunc, std::function<bool()> isValidFunc, int fd, bool isRead)
-            : _clearFunc(std::move(clearFunc)), _isValidFunc(std::move(isValidFunc)), _fd(fd), _isRead(isRead)
+        FdHandler(
+            std::function<void(uint64_t id)> clearFunc,
+            std::function<bool(uint64_t id)> isValidFunc,
+            uint64_t id,
+            bool isRead)
+            : _clearFunc(std::move(clearFunc)),
+              _isValidFunc(std::move(isValidFunc)),
+              _id(id),
+              _isRead(isRead)
         {
         }
     };
@@ -333,38 +333,42 @@ public:
      */
     FdHandler SetReadHandler(int fd, std::function<void()> callback)
     {
-        SetReadWriteHandler(fd, callback, true);
-        return FdHandler{
-            [this, fd]() {
-                SetReadWriteHandler(fd, nullptr, true, false);
-            },
-            [this, fd]() -> bool {
+        auto id = _fdHandlerIdSeed++;
+        SetReadWriteHandler(fd, id, callback, true);
+        return FdHandler(
+            [this, fd](uint64_t id) {
                 auto item = _fdHandlers.find(fd);
-                if (item == _fdHandlers.end())
+                if(item == _fdHandlers.end() || item->second.readHandlerId != id)
                 {
-                    return false;
+                    return;
                 }
-                return item->second.readHandler != nullptr;
-            }, fd, true
-        };
+                SetReadWriteHandler(fd, 0, nullptr, true, false);
+            },
+            [this, fd](uint64_t id) -> bool {
+                auto item = _fdHandlers.find(fd);
+                return item != _fdHandlers.end() && item->second.readHandlerId == id;
+            }, id, true
+        );
     }
 
     FdHandler SetWriteHandler(int fd, std::function<void()> callback)
     {
-        SetReadWriteHandler(fd, callback, false);
-        return FdHandler{
-            [this, fd]() {
-                SetReadWriteHandler(fd, nullptr, false, false);
-            },
-            [this, fd]() -> bool {
+        auto id = _fdHandlerIdSeed++;
+        SetReadWriteHandler(fd, id, callback, false);
+        return FdHandler(
+            [this, fd](uint64_t id) {
                 auto item = _fdHandlers.find(fd);
-                if (item == _fdHandlers.end())
+                if(item == _fdHandlers.end() || item->second.writeHandlerId != id)
                 {
-                    return false;
+                    return;
                 }
-                return item->second.writeHandler != nullptr;
-            }, fd, false
-        };
+                SetReadWriteHandler(fd, 0, nullptr, false, false);
+            },
+            [this, fd](uint64_t id) -> bool {
+                auto item = _fdHandlers.find(fd);
+                return item != _fdHandlers.end() && item->second.writeHandlerId == id;
+            }, id, false
+        );
     }
 
     void RunInNextCycle(std::function<void()> callback)
@@ -433,6 +437,8 @@ private:
     {
         std::function<void()> readHandler{nullptr};
         std::function<void()> writeHandler{nullptr};
+        uint64_t readHandlerId{0};
+        uint64_t writeHandlerId{0};
     };
 
     /** This must be 1 to allow safely removal of fd handlers inside a fd handler */
@@ -445,6 +451,7 @@ private:
     std::unordered_map<TimeoutHandle, Timestamp> _timerIndex{};
     TimeoutHandle _timeoutHandleSeed{0};
     std::queue<std::function<void()>> _nextCycleCallbacks{};
+    uint64_t _fdHandlerIdSeed{1};
 
     Timestamp GetTimestamp()
     {
@@ -464,7 +471,7 @@ private:
         _timerIndex.erase(item);
     }
 
-    void SetReadWriteHandler(int fd, std::function<void()> handler, bool isRead, bool prohibitNullCallback = true)
+    void SetReadWriteHandler(int fd, uint64_t id, std::function<void()> handler, bool isRead, bool prohibitNullCallback = true)
     {
         if (prohibitNullCallback && handler == nullptr)
         {
@@ -478,10 +485,12 @@ private:
         if(isRead)
         {
             fdHandler.readHandler = handler;
+            fdHandler.readHandlerId = id;
         }
         else
         {
             fdHandler.writeHandler = handler;
+            fdHandler.writeHandlerId = id;
         }
         /** Change epoll settings */
         if((!fdHandler.readHandler) && (!fdHandler.writeHandler))
